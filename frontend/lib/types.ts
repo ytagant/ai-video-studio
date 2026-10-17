@@ -22,6 +22,7 @@ export interface JobMeta {
   title: string;
   description: string;
   hashtags: string[];
+  credits?: string;
 }
 
 export interface AgentDef {

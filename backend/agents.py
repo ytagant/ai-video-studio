@@ -249,8 +249,57 @@ async def director_agent(ctx: Ctx) -> Dict[str, Any]:
 
 # ------------------------------------------------------------- 3. voice & sound
 
+# ElevenLabs premade voices (eleven_multilingual_v2 speaks 29 languages incl. Urdu/Hindi)
+ELEVEN_VOICES = {
+    "English": "21m00Tcm4TlvDq8ikWAM",  # Rachel
+    "Urdu": "pNInz6obpgDQGcFmaJgB",      # Adam (multilingual)
+    "Hindi": "MF3mGyEYCl7XYWbV9V6O",     # Elli (multilingual)
+}
+
+
+def _elevenlabs_quota_ok(api_key: str, needed_chars: int) -> bool:
+    """All-or-nothing per job: only use ElevenLabs if the whole job fits the
+    remaining free-tier quota (keeps one consistent voice for the video)."""
+    import requests
+    r = requests.get("https://api.elevenlabs.io/v1/user",
+                     headers={"xi-api-key": api_key}, timeout=20)
+    r.raise_for_status()
+    sub = r.json().get("subscription", {})
+    remaining = sub.get("character_limit", 0) - sub.get("character_count", 0)
+    return remaining >= needed_chars
+
+
+def _elevenlabs_tts(api_key: str, text: str, voice_id: str, dest: Path) -> Path:
+    import requests
+    r = requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+        headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+        json={"text": text, "model_id": "eleven_multilingual_v2",
+              "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}},
+        timeout=120)
+    r.raise_for_status()
+    data = r.content
+    if len(data) < 1000:
+        raise RuntimeError("elevenlabs returned empty audio")
+    dest.write_bytes(data)
+    return dest
+
+
 async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
     await ctx.emit("voice", "working", 5, "Warming up voices…")
+    eleven_key = os.getenv("ELEVENLABS_API_KEY")
+    scenes = ctx.data["script"]["scenes"]
+    # Decide once per job so the whole video keeps a single voice.
+    use_eleven = False
+    eleven_voice = ELEVEN_VOICES.get(ctx.p("language", "English"), ELEVEN_VOICES["English"])
+    if eleven_key:
+        try:
+            need = int(sum(len(s.get("narration", "")) for s in scenes) * 1.2) + 100
+            use_eleven = await asyncio.to_thread(_elevenlabs_quota_ok, eleven_key, need)
+            await ctx.emit("voice", "working", 5,
+                           "ElevenLabs studio voice" if use_eleven else "ElevenLabs quota low — neural fallback")
+        except Exception:
+            use_eleven = False
     try:
         import edge_tts  # noqa
         tts_ok = True
@@ -259,11 +308,17 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
     language = ctx.p("language", "English")
     voices = VOICES.get(language, VOICES["English"])
     voice = ctx.p("voice") if ctx.p("voice") not in (None, "", "default") else voices[0]
-    scenes = ctx.data["script"]["scenes"]
     for i, s in enumerate(scenes):
         out = ctx.assets / f"scene_{i:02d}_narr.mp3"
         dur = 0.0
-        if tts_ok:
+        if use_eleven:
+            try:
+                await asyncio.to_thread(_elevenlabs_tts, eleven_key, s["narration"],
+                                        eleven_voice, out)
+                dur = ffprobe_duration(out)
+            except Exception:
+                use_eleven = False  # fall back for the rest of the scenes
+        if dur <= 0 and tts_ok:
             try:
                 import edge_tts
                 await edge_tts.Communicate(s["narration"], voice).save(str(out))
@@ -288,7 +343,9 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
         s["seconds"] = round(dur + 0.6, 1)
         await ctx.emit("voice", "working", int((i + 1) / len(scenes) * 100),
                        f"Voiced scene {i + 1}/{len(scenes)}")
-    await ctx.emit("voice", "done", 100, f"Narration complete ({voice})")
+    await ctx.emit("voice", "done", 100,
+                       "Narration complete (ElevenLabs studio voice)" if use_eleven
+                       else f"Narration complete ({voice})")
     return ctx.data["script"]
 
 
@@ -302,16 +359,25 @@ def _pexels_clip(api_key: str, query: str, dest: Path) -> Optional[Path]:
                              "size": "medium"}, timeout=25)
     r.raise_for_status()
     for v in r.json().get("videos", []):
-        files = sorted(v.get("video_files", []), key=lambda f: f.get("width", 0), reverse=True)
+        # smallest file >=960px first: fast download, plenty for 720p output
+        files = sorted(v.get("video_files", []), key=lambda f: f.get("width", 0))
         for f in files:
             link = f.get("link", "")
-            if link and f.get("width", 0) >= 960 and link.endswith(".mp4"):
-                d = requests.get(link, stream=True, timeout=60)
+            w = f.get("width", 0) or 0
+            if link and 960 <= w <= 1920 and link.endswith(".mp4"):
+                d = requests.get(link, stream=True, timeout=120)
                 d.raise_for_status()
+                total = 0
                 with open(dest, "wb") as fh:
                     for chunk in d.iter_content(1 << 20):
+                        total += len(chunk)
+                        if total > 80_000_000:
+                            break
                         fh.write(chunk)
-                return dest
+                if total > 200_000 and total <= 80_000_000:
+                    return dest
+                # empty or oversized — try next file
+                continue
     return None
 
 
@@ -479,18 +545,22 @@ async def footage_agent(ctx: Ctx) -> Dict[str, Any]:
         dest = ctx.assets / f"scene_{i:02d}_clip.mp4"
         query = f"{s['keywords']} {cat_visual}"
         clip = None
+        source = None
         try:  # 1) Pexels via stored connector credential (secure, key never in files)
             clip = await asyncio.to_thread(_pexels_connector_clip, query, dest)
+            source = "Pexels" if clip else None
         except Exception:
             clip = None
         if clip is None and pexels:
             try:
                 clip = await asyncio.to_thread(_pexels_clip, pexels, query, dest)
+                source = "Pexels" if clip else None
             except Exception:
                 clip = None
         if clip is None and pixabay:
             try:
                 clip = await asyncio.to_thread(_pixabay_clip, pixabay, query, dest)
+                source = "Pixabay" if clip else None
             except Exception:
                 clip = None
         if clip is None:  # Wikimedia Commons — free, no API key needed
@@ -499,9 +569,11 @@ async def footage_agent(ctx: Ctx) -> Dict[str, Any]:
                 cqueries = FOOTAGE_QUERIES.get(ctx.p("category", ""), [])
                 cquery = cqueries[i % len(cqueries)] if cqueries else query
                 clip = await asyncio.to_thread(_commons_clip, cquery, dest, used_urls)
+                source = "Wikimedia Commons" if clip else None
             except Exception:
                 clip = None
         s["clip"] = str(clip) if clip else None
+        s["clip_source"] = source
         await ctx.emit("footage", "working", int((i + 1) / len(scenes) * 100),
                        f"Footage {i + 1}/{len(scenes)} {'found' if clip else '— will be AI-painted'}")
     found = sum(1 for s in scenes if s.get("clip"))

@@ -114,6 +114,11 @@ export default function Storyboard({
             </div>
             <CopyBtn text={meta.hashtags.join(" ")} />
           </div>
+          {meta.credits && (
+            <div className="text-[11px] text-white/40 flex items-center gap-1.5">
+              <span>🎬</span><span>{meta.credits}</span>
+            </div>
+          )}
         </div>
       )}
 

@@ -48,6 +48,10 @@ async def run_production(job_id: str, params: Dict[str, Any], workdir: Path,
         await voice_agent(ctx)
         await send(job_id, {"type": "scenes", "scenes": job["scenes"]})  # durations updated
         await footage_agent(ctx)
+        # footage attribution for the video description / credits
+        srcs = sorted({s.get("clip_source") for s in job["scenes"] if s.get("clip_source")})
+        if srcs:
+            job["metadata"]["credits"] = "Stock footage: " + ", ".join(srcs)
         await visual_artist_agent(ctx)
         final = await editor_agent(ctx)
 
