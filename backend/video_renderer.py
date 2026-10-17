@@ -74,20 +74,23 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
     sub = ("subtitles='" + str(srt) + "':force_style="
            "'FontName=Noto Sans Arabic,FontSize=22,PrimaryColour=&HFFFFFF,"
            "OutlineColour=&H80000000,BorderStyle=1,Outline=2,MarginV=40'")
+    # Low-memory final encode for small containers (512MB): 720p + ultrafast + 2 threads.
+    # Per-scene segments stay 1080p; only this final pass is slimmed down.
+    vf_final = sub + ",scale=1280:720,setsar=1,format=yuv420p"
 
     final = workdir / "final.mp4"
     if music and Path(music).exists():
         sh(["ffmpeg", "-y", "-i", str(vcat), "-i", str(narr), "-stream_loop", "-1", "-i", music,
             "-filter_complex",
             "[2:a]volume=0.12,apad[m];[1:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
-            "-map", "0:v", "-map", "[a]", "-vf", sub,
+            "-map", "0:v", "-map", "[a]", "-vf", vf_final,
             "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p",
-            "-preset", "veryfast", "-threads", "2", "-crf", "23", "-movflags", "+faststart",
+            "-preset", "ultrafast", "-threads", "2", "-crf", "23", "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100", "-shortest", str(final)])
     else:
         sh(["ffmpeg", "-y", "-i", str(vcat), "-i", str(narr),
-            "-vf", sub, "-c:v", "libx264", "-profile:v", "high", "-level", "4.0",
-            "-pix_fmt", "yuv420p", "-preset", "veryfast", "-threads", "2", "-crf", "23",
+            "-vf", vf_final, "-c:v", "libx264", "-profile:v", "high", "-level", "4.0",
+            "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-threads", "2", "-crf", "23",
             "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100",
             "-shortest", str(final)])
