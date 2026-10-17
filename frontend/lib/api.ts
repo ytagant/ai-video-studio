@@ -37,6 +37,12 @@ export async function createJob(params: JobParams): Promise<{ job_id: string }> 
   return r.json();
 }
 
+export async function getJob(jobId: string): Promise<any> {
+  const r = await fetch(`${API_BASE}/api/jobs/${jobId}`);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 export async function reeditJob(jobId: string, instruction: string) {
   const r = await fetch(`${API_BASE}/api/jobs/${jobId}/reedit`, {
     method: "POST",

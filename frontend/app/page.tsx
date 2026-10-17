@@ -5,7 +5,7 @@ import CategorySelector from "@/components/CategorySelector";
 import ProductionFloor from "@/components/ProductionFloor";
 import Storyboard from "@/components/Storyboard";
 import { AGENT_DEFS, AgentState, JobMeta, Scene, idleAgents } from "@/lib/types";
-import { JobParams, WS_BASE, createJob } from "@/lib/api";
+import { JobParams, createJob, getJob } from "@/lib/api";
 
 export default function Home() {
   const [agents, setAgents] = useState<Record<string, AgentState>>(idleAgents());
@@ -16,12 +16,9 @@ export default function Home() {
   const [videoReady, setVideoReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState("Documentary");
-  const wsRef = useRef<WebSocket | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => wsRef.current?.close(), []);
-
-  const patchAgent = (id: string, patch: Partial<AgentState>) =>
-    setAgents((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   async function start(params: JobParams) {
     setError(null); setScenes([]); setMeta(null);
@@ -29,27 +26,34 @@ export default function Home() {
     try {
       const { job_id } = await createJob(params);
       setJobId(job_id); setRunning(true);
-      wsRef.current?.close();
-      const ws = new WebSocket(`${WS_BASE}/ws/${job_id}`);
-      wsRef.current = ws;
-      ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
-        if (msg.type === "agent") {
-          patchAgent(msg.agent, { status: msg.status, progress: msg.progress, message: msg.message });
-        } else if (msg.type === "scenes") {
-          setScenes(msg.scenes);
-        } else if (msg.type === "metadata") {
-          setMeta(msg.metadata);
-        } else if (msg.type === "done") {
-          setScenes(msg.scenes); setMeta(msg.metadata);
-          setVideoReady(true); setRunning(false); ws.close();
-        } else if (msg.type === "error") {
-          setError(msg.error || "Production failed"); setRunning(false); ws.close();
+      // HTTP polling for progress (some free hosts block WebSockets).
+      if (pollRef.current) clearInterval(pollRef.current);
+      const applySnapshot = (job: any) => {
+        if (job.agents) {
+          setAgents((prev) => {
+            const next = { ...prev };
+            for (const [id, a] of Object.entries<any>(job.agents))
+              next[id] = { ...next[id], status: a.status, progress: a.progress, message: a.message };
+            return next;
+          });
         }
+        if (Array.isArray(job.scenes) && job.scenes.length) setScenes(job.scenes);
+        if (job.metadata && job.metadata.title) setMeta(job.metadata);
       };
-      ws.onerror = () => { setError("WebSocket connection failed — is the backend running on :8000?"); setRunning(false); };
+      const stop = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+      pollRef.current = setInterval(async () => {
+        try {
+          const job = await getJob(job_id);
+          applySnapshot(job);
+          if (job.status === "done") { stop(); setRunning(false); setVideoReady(true); }
+          else if (job.status === "error") { stop(); setRunning(false); setError(job.error || "Production failed"); }
+        } catch {
+          // transient network hiccup — keep polling
+        }
+      }, 2500);
     } catch (e: any) {
-      setError("Could not start job: " + (e?.message || e) + " — is the backend running on :8000?");
+      setError("Could not start job: " + (e?.message || e));
+      setRunning(false);
     }
   }
 

@@ -23,6 +23,11 @@ async def run_production(job_id: str, params: Dict[str, Any], workdir: Path,
     workdir.mkdir(parents=True, exist_ok=True)
 
     async def emit(agent: str, status: str, progress: int, message: str) -> None:
+        # Persist agent state on the job so HTTP polling clients can read it
+        # (some free hosts block WebSockets entirely).
+        job.setdefault("agents", {})[agent] = {"status": status,
+                                               "progress": progress,
+                                               "message": message}
         await send(job_id, {"type": "agent", "agent": agent, "status": status,
                             "progress": progress, "message": message})
 
