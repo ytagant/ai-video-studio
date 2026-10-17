@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Video Studio — Autonomous Production Floor",
+  title: "Video Studio — From idea to viral video",
   description: "Multi-agent AI video production studio",
 };
 

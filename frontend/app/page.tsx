@@ -1,31 +1,55 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import Sidebar from "@/components/Sidebar";
-import CategorySelector from "@/components/CategorySelector";
+import Sidebar, { HistoryEntry } from "@/components/Sidebar";
+import TopBar from "@/components/TopBar";
+import Pipeline from "@/components/Pipeline";
+import NewVideoCard from "@/components/NewVideoCard";
+import StyleColumn, { STYLE_PRESETS } from "@/components/StyleColumn";
 import ProductionFloor from "@/components/ProductionFloor";
 import Storyboard from "@/components/Storyboard";
-import { AGENT_DEFS, AgentState, JobMeta, Scene, idleAgents } from "@/lib/types";
+import { AgentState, JobMeta, Scene, idleAgents } from "@/lib/types";
 import { JobParams, createJob, getJob } from "@/lib/api";
+
+function fmtElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
 
 export default function Home() {
   const [agents, setAgents] = useState<Record<string, AgentState>>(idleAgents());
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [meta, setMeta] = useState<JobMeta | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState("Documentary");
+  const [style, setStyle] = useState(STYLE_PRESETS[0].id);
+  const [jobTitle, setJobTitle] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
 
   async function start(params: JobParams) {
     setError(null); setScenes([]); setMeta(null);
     setVideoReady(false); setAgents(idleAgents());
+    setJobStatus(null); setJobTitle(params.topic.split("\n")[0].slice(0, 60));
     try {
       const { job_id } = await createJob(params);
-      setJobId(job_id); setRunning(true);
+      setJobId(job_id); setRunning(true); setJobStatus("running");
+      const t0 = Date.now();
+      setStartedAt(t0); setElapsed("00:00");
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => setElapsed(fmtElapsed(Date.now() - t0)), 1000);
+
       // HTTP polling for progress (some free hosts block WebSockets).
       if (pollRef.current) clearInterval(pollRef.current);
       const applySnapshot = (job: any) => {
@@ -39,14 +63,23 @@ export default function Home() {
         }
         if (Array.isArray(job.scenes) && job.scenes.length) setScenes(job.scenes);
         if (job.metadata && job.metadata.title) setMeta(job.metadata);
+        if (job.status) setJobStatus(job.status);
       };
-      const stop = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+      const stop = () => {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+      };
       pollRef.current = setInterval(async () => {
         try {
           const job = await getJob(job_id);
           applySnapshot(job);
-          if (job.status === "done") { stop(); setRunning(false); setVideoReady(true); }
-          else if (job.status === "error") { stop(); setRunning(false); setError(job.error || "Production failed"); }
+          if (job.status === "done") {
+            stop(); setRunning(false); setVideoReady(true);
+            const title = job.metadata?.title || params.topic.split("\n")[0].slice(0, 60);
+            setHistory((h) => [{ id: job_id, title }, ...h].slice(0, 12));
+          } else if (job.status === "error") {
+            stop(); setRunning(false); setError(job.error || "Production failed");
+          }
         } catch {
           // transient network hiccup — keep polling
         }
@@ -57,34 +90,58 @@ export default function Home() {
     }
   }
 
+  const doneCount = Object.values(agents).filter((a) => a.status === "done").length;
+  const avgProgress = Math.round(
+    Object.values(agents).reduce((s, a) => s + (a.progress || 0), 0) / 6
+  );
+
   return (
-    <div className="flex flex-col lg:flex-row min-h-screen">
-      <Sidebar running={running} onStart={(p) => start({ ...p, category })} />
-      <main className="flex-1 p-4 lg:p-6 space-y-5 max-w-6xl w-full mx-auto">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">Autonomous Production Floor</h1>
-            <p className="text-xs text-white/40">Six AI agents collaborate live to produce your video</p>
-          </div>
-          <div className="text-[11px] text-white/30 font-mono hidden sm:block">
-            {jobId ? `job ${jobId}` : "no active job"}
-          </div>
-        </header>
+    <div className="flex min-h-screen bg-studio-bg">
+      <Sidebar history={history} />
 
-        {error && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 text-red-300 text-sm px-4 py-3">
-            {error}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar running={running} agentsDone={doneCount} progress={avgProgress} jobId={jobId} />
+
+        <main className="mx-auto w-full max-w-[1500px] flex-1 space-y-4 p-4 lg:p-5">
+          {error && (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {error}
+            </div>
+          )}
+
+          <Pipeline
+            agents={agents}
+            jobStatus={jobStatus}
+            running={running}
+            title={jobTitle}
+            elapsed={elapsed}
+          />
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.12fr_0.88fr_1.5fr]">
+            <NewVideoCard
+              running={running}
+              onStart={start}
+              onCategoryChange={setCategory}
+              style={style}
+            />
+            <StyleColumn selected={style} onSelect={setStyle} />
+            <div className="space-y-4">
+              <ProductionFloor agents={agents} />
+              <Storyboard
+                jobId={jobId}
+                scenes={scenes}
+                meta={meta}
+                videoReady={videoReady}
+                category={category}
+              />
+            </div>
           </div>
-        )}
 
-        <CategorySelector selected={category} onSelect={setCategory} />
-        <ProductionFloor agents={agents} />
-        <Storyboard jobId={jobId} scenes={scenes} meta={meta} videoReady={videoReady} />
-
-        <footer className="text-center text-[11px] text-white/25 pb-6">
-          AI Video Studio · self-hosted · FFmpeg engine · {AGENT_DEFS.length} agents
-        </footer>
-      </main>
+          <footer className="pb-4 text-center text-[11px] text-white/25">
+            Video Studio · six AI agents · FFmpeg engine
+          </footer>
+        </main>
+      </div>
     </div>
   );
 }

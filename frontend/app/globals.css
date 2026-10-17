@@ -3,12 +3,55 @@
 @tailwind utilities;
 
 body {
-  background: #0a0a0f;
-  color: #e8e8ee;
+  background: #0a1120;
+  color: #e8eaf0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #121218; }
-::-webkit-scrollbar-thumb { background: #2a2a35; border-radius: 4px; }
+::-webkit-scrollbar-track { background: #0a1120; }
+::-webkit-scrollbar-thumb { background: #24334f; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #31445f; }
 
 input, select, textarea { color-scheme: dark; }
+
+/* range slider */
+input[type="range"].studio-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #f5a623 var(--fill, 10%), #24334f var(--fill, 10%));
+  outline: none;
+}
+input[type="range"].studio-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 9999px;
+  background: #f5a623;
+  border: 3px solid #0a1120;
+  box-shadow: 0 0 0 1.5px #f5a623, 0 2px 8px rgba(0,0,0,0.5);
+  cursor: pointer;
+}
+input[type="range"].studio-range::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border-radius: 9999px;
+  background: #f5a623;
+  border: 3px solid #0a1120;
+  box-shadow: 0 0 0 1.5px #f5a623;
+  cursor: pointer;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

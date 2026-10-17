@@ -15,6 +15,7 @@ export interface Scene {
   music_mood?: string;
   audio?: string;
   clip?: string | null;
+  clip_source?: string | null;
   image?: string | null;
 }
 

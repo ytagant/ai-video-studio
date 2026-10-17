@@ -1,140 +1,161 @@
 "use client";
 import { useState } from "react";
-import { Clapperboard, KeyRound, Loader2, Mic, Settings2 } from "lucide-react";
-import { JobParams } from "@/lib/api";
+import {
+  Activity, Clapperboard, Download, FolderDown, HelpCircle, LayoutGrid, Settings, Video,
+} from "lucide-react";
+import { downloadUrl } from "@/lib/api";
 
-const LANGUAGES = ["English", "Urdu", "Hindi"];
-const STYLES = ["Documentary", "3D Recreation", "Cinematic Explainer"];
-const VOICES: Record<string, string[]> = {
-  English: ["default", "en-US-AriaNeural", "en-US-GuyNeural"],
-  Urdu: ["default", "ur-PK-AsadNeural", "ur-PK-UzmaNeural"],
-  Hindi: ["default", "hi-IN-SwaraNeural", "hi-IN-MadhurNeural"],
+export interface HistoryEntry {
+  id: string;
+  title: string;
+}
+
+const CONNECTIONS: { name: string; state: "connected" | "missing" | "optional" | "none" }[] = [
+  { name: "Gemini", state: "connected" },
+  { name: "Pixabay", state: "connected" },
+  { name: "ElevenLabs", state: "connected" },
+  { name: "Pexels", state: "missing" },
+  { name: "Unsplash", state: "optional" },
+  { name: "Claude", state: "optional" },
+  { name: "Music", state: "none" },
+];
+
+const STATE_STYLE: Record<string, { dot: string; text: string; label: string }> = {
+  connected: { dot: "bg-emerald-400", text: "text-emerald-400", label: "Connected" },
+  missing: { dot: "bg-amber-400", text: "text-amber-400", label: "Missing" },
+  optional: { dot: "bg-white/25", text: "text-white/40", label: "Optional" },
+  none: { dot: "bg-white/15", text: "text-white/30", label: "None" },
 };
 
-export default function Sidebar({
-  running,
-  onStart,
+function SoonTip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-studio-card border border-white/15 px-2.5 py-1 text-[11px] text-white/70 opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+      {children}
+    </span>
+  );
+}
+
+function NavItem({
+  icon: Icon, label, active, soon,
 }: {
-  running: boolean;
-  onStart: (p: JobParams) => void;
+  icon: any; label: string; active?: boolean; soon?: boolean;
 }) {
-  const [topic, setTopic] = useState("");
-  const [duration, setDuration] = useState(60);
-  const [language, setLanguage] = useState("English");
-  const [style, setStyle] = useState(STYLES[0]);
-  const [voice, setVoice] = useState("default");
-  const [showKeys, setShowKeys] = useState(false);
+  return (
+    <button
+      className={`group relative flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition
+        ${active
+          ? "bg-gradient-to-r from-studio-gold to-amber-500 text-black shadow-glow"
+          : "text-white/55 hover:bg-white/5 hover:text-white"}`}
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0" />
+      <span className="truncate">{label}</span>
+      {soon && <SoonTip>Coming soon</SoonTip>}
+    </button>
+  );
+}
 
-  const submit = () => {
-    if (!topic.trim() || running) return;
-    onStart({ topic: topic.trim(), duration, language, style, voice });
-  };
-
-  const field =
-    "w-full rounded-lg bg-studio-card border border-white/10 px-3 py-2 text-sm outline-none focus:border-studio-gold/60";
+export default function Sidebar({ history }: { history: HistoryEntry[] }) {
+  const [showOutput, setShowOutput] = useState(true);
+  const connectedCount = CONNECTIONS.filter((c) => c.state === "connected").length;
 
   return (
-    <aside className="w-full lg:w-80 shrink-0 bg-studio-panel border-r border-white/5 p-5 flex flex-col gap-5 overflow-y-auto">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-studio-gold to-orange-600 flex items-center justify-center">
-          <Clapperboard className="w-5 h-5 text-black" />
+    <aside className="hidden w-60 shrink-0 flex-col gap-6 overflow-y-auto border-r border-white/5 bg-studio-deep px-4 py-5 lg:flex">
+      {/* Brand */}
+      <div className="flex items-center gap-3 px-1">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-studio-gold to-orange-600 text-xl font-black text-black shadow-glow">
+          V
         </div>
         <div>
-          <div className="font-bold text-lg leading-tight">
-            Video <span className="text-studio-gold">Studio</span>
-          </div>
-          <div className="text-[11px] text-white/40">AI Video Production</div>
+          <div className="text-[17px] font-extrabold leading-tight text-white">Video Studio</div>
+          <div className="text-[11px] text-white/40">From idea to viral video</div>
         </div>
       </div>
 
+      {/* CREATE */}
       <div>
-        <label className="text-xs text-white/50 mb-1 block">Video title / topic</label>
-        <input
-          className={field}
-          placeholder="e.g. The Amazon: World's Largest Rainforest"
-          value={topic}
-          onChange={(e) => setTopic(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
+        <div className="mb-2 px-2 text-[10px] font-bold tracking-[0.14em] text-white/30">CREATE</div>
+        <div className="space-y-1">
+          <NavItem icon={LayoutGrid} label="Studio" active />
+          <NavItem icon={Video} label="Projects" soon />
+        </div>
       </div>
 
+      {/* TOOLS */}
       <div>
-        <label className="text-xs text-white/50 mb-1 block">
-          Video length: <span className="text-studio-gold font-semibold">
-            {duration >= 60 ? `${Math.floor(duration / 60)} min${duration % 60 ? ` ${duration % 60}s` : ""}` : `${duration}s`}
+        <div className="mb-2 px-2 text-[10px] font-bold tracking-[0.14em] text-white/30">TOOLS</div>
+        <div className="space-y-1">
+          <NavItem icon={Activity} label="Activity" soon />
+          <button
+            onClick={() => setShowOutput(!showOutput)}
+            className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-white/55 transition hover:bg-white/5 hover:text-white"
+          >
+            <FolderDown className="h-[18px] w-[18px] shrink-0" />
+            <span className="truncate">Output Folder</span>
+            {history.length > 0 && (
+              <span className="ml-auto rounded-full bg-studio-gold/15 px-2 py-0.5 text-[10px] font-bold text-studio-gold">
+                {history.length}
+              </span>
+            )}
+          </button>
+          {showOutput && (
+            <div className="ml-4 space-y-1 border-l border-white/10 pl-3 pt-1">
+              {history.length === 0 && (
+                <div className="px-2 py-1 text-[11px] text-white/30">No videos yet</div>
+              )}
+              {history.slice(0, 6).map((h) => (
+                <a
+                  key={h.id}
+                  href={downloadUrl(h.id)}
+                  className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-white/55 transition hover:bg-white/5 hover:text-white"
+                  title={h.title}
+                >
+                  <Download className="h-3 w-3 shrink-0 text-studio-gold/70" />
+                  <span className="truncate">{h.title}</span>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ACCOUNT */}
+      <div>
+        <div className="mb-2 px-2 text-[10px] font-bold tracking-[0.14em] text-white/30">ACCOUNT</div>
+        <div className="space-y-1">
+          <NavItem icon={Settings} label="Settings" soon />
+          <NavItem icon={HelpCircle} label="Help & Support" soon />
+        </div>
+      </div>
+
+      {/* CONNECTIONS */}
+      <div>
+        <div className="mb-2 flex items-center justify-between px-2">
+          <span className="text-[10px] font-bold tracking-[0.14em] text-white/30">CONNECTIONS</span>
+          <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+            {connectedCount} connected
           </span>
-        </label>
-        <div className="flex gap-1.5 mb-2">
-          {[60, 120, 180, 300, 600].map((m) => (
-            <button
-              key={m}
-              onClick={() => setDuration(m)}
-              className={`flex-1 text-[11px] font-semibold rounded-lg py-1.5 border transition
-                ${duration === m
-                  ? "bg-studio-gold/20 border-studio-gold text-studio-gold"
-                  : "bg-studio-card border-white/10 text-white/50 hover:border-white/25"}`}
-            >
-              {m / 60}m
-            </button>
-          ))}
         </div>
-        <input
-          type="range" min={15} max={600} step={15} value={duration}
-          onChange={(e) => setDuration(Number(e.target.value))}
-          className="w-full accent-amber-400"
-        />
-        <div className="text-[10px] text-white/30 mt-1">Slide for fine-tuning (15s – 10 min)</div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-white/50 mb-1 block">Language</label>
-          <select className={field} value={language}
-            onChange={(e) => { setLanguage(e.target.value); setVoice("default"); }}>
-            {LANGUAGES.map((l) => <option key={l}>{l}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-white/50 mb-1 block">Style</label>
-          <select className={field} value={style} onChange={(e) => setStyle(e.target.value)}>
-            {STYLES.map((s) => <option key={s}>{s}</option>)}
-          </select>
+        <div className="space-y-0.5">
+          {CONNECTIONS.map((c) => {
+            const s = STATE_STYLE[c.state];
+            return (
+              <div
+                key={c.name}
+                className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12px] transition hover:bg-white/5"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+                <span className="text-white/65">{c.name}</span>
+                <span className={`ml-auto text-[11px] ${s.text}`}>{s.label}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      <div>
-        <label className="text-xs text-white/50 mb-1 flex items-center gap-1">
-          <Mic className="w-3 h-3" /> Voice
-        </label>
-        <select className={field} value={voice} onChange={(e) => setVoice(e.target.value)}>
-          {VOICES[language].map((v) => <option key={v} value={v}>{v}</option>)}
-        </select>
+      <div className="mt-auto flex items-center gap-2 px-2 pt-2">
+        <Clapperboard className="h-4 w-4 text-studio-gold/60" />
+        <span className="text-[10px] text-white/25">Video Studio · self-hosted · FFmpeg</span>
       </div>
-
-      <button
-        onClick={() => setShowKeys(!showKeys)}
-        className="flex items-center gap-2 text-xs text-white/50 hover:text-white/80"
-      >
-        <KeyRound className="w-3.5 h-3.5" /> API connections
-        <Settings2 className="w-3 h-3 ml-auto" />
-      </button>
-      {showKeys && (
-        <div className="rounded-lg bg-studio-card border border-white/10 p-3 text-[11px] text-white/50 space-y-1">
-          <p>Keys live in <code className="text-studio-gold">backend/.env</code>:</p>
-          <p>• GEMINI_API_KEY — script writer</p>
-          <p>• PEXELS_API_KEY / PIXABAY_API_KEY — footage</p>
-          <p>• Edge-TTS voice needs no key</p>
-        </div>
-      )}
-
-      <button
-        onClick={submit}
-        disabled={running || !topic.trim()}
-        className="mt-auto rounded-xl bg-gradient-to-r from-studio-gold to-orange-500 text-black font-bold py-3
-                   disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition flex items-center justify-center gap-2"
-      >
-        {running ? <><Loader2 className="w-4 h-4 animate-spin" /> Producing…</> : "Generate Video"}
-      </button>
     </aside>
   );
 }
