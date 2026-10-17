@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-W, H, FPS = 1920, 1080, 25
+W, H, FPS = 1280, 720, 25  # 720p segments: 512MB containers SIGKILL 1080p encodes
 
 
 def sh(cmd: List[str]) -> subprocess.CompletedProcess:
@@ -42,7 +42,7 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
             vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,"
                   f"fade=t=in:st=0:d=0.4,fade=t=out:st={max(0.4, dur - 0.4):.2f}:d=0.4,format=yuv420p")
             sh(["ffmpeg", "-y", "-stream_loop", "-1", "-i", s["clip"], "-t", f"{dur:.2f}",
-                "-vf", vf, "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast",
+                "-vf", vf, "-r", str(FPS), "-c:v", "libx264", "-preset", "ultrafast",
                 "-threads", "2", "-crf", "23", "-an", str(seg)])
         else:
             img = s.get("image")
@@ -54,7 +54,7 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
                   f":d={frames}:s={W}x{H}:fps={FPS},setsar=1,format=yuv420p")
             sh(["ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-i", img,
                 "-vf", vf, "-frames:v", str(frames),
-                "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-crf", "23", "-an", str(seg)])
+                "-c:v", "libx264", "-preset", "ultrafast", "-threads", "2", "-crf", "23", "-an", str(seg)])
         segs.append(seg)
         auds.append(s["audio"])
 
@@ -74,8 +74,8 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
     sub = ("subtitles='" + str(srt) + "':force_style="
            "'FontName=Noto Sans Arabic,FontSize=22,PrimaryColour=&HFFFFFF,"
            "OutlineColour=&H80000000,BorderStyle=1,Outline=2,MarginV=40'")
-    # Low-memory final encode for small containers (512MB): 720p + ultrafast + 2 threads.
-    # Per-scene segments stay 1080p; only this final pass is slimmed down.
+    # Low-memory encodes for small containers (512MB): everything 720p + ultrafast + 2 threads.
+    # (1080p per-scene segments were SIGKILLed by the OOM killer on the free tier.)
     vf_final = sub + ",scale=1280:720,setsar=1,format=yuv420p"
 
     final = workdir / "final.mp4"

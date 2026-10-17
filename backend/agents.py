@@ -316,6 +316,8 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
                 await asyncio.to_thread(_elevenlabs_tts, eleven_key, s["narration"],
                                         eleven_voice, out)
                 dur = ffprobe_duration(out)
+                if dur > 0:
+                    s["tts_engine"] = "elevenlabs"
             except Exception:
                 use_eleven = False  # fall back for the rest of the scenes
         if dur <= 0 and tts_ok:
@@ -323,6 +325,8 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
                 import edge_tts
                 await edge_tts.Communicate(s["narration"], voice).save(str(out))
                 dur = ffprobe_duration(out)
+                if dur > 0:
+                    s["tts_engine"] = "edge-tts"
             except Exception:
                 tts_ok = False
         if dur <= 0:
@@ -333,6 +337,8 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
                 await asyncio.to_thread(
                     gTTS(s["narration"], lang=glang).save, str(out))
                 dur = ffprobe_duration(out)
+                if dur > 0:
+                    s["tts_engine"] = "gtts"
             except Exception:
                 dur = 0.0
         if dur <= 0:
@@ -343,6 +349,8 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
         s["seconds"] = round(dur + 0.6, 1)
         await ctx.emit("voice", "working", int((i + 1) / len(scenes) * 100),
                        f"Voiced scene {i + 1}/{len(scenes)}")
+    engines = [x.get("tts_engine") for x in scenes if x.get("tts_engine")]
+    ctx.data["voice_engine"] = max(set(engines), key=engines.count) if engines else "silent"
     await ctx.emit("voice", "done", 100,
                        "Narration complete (ElevenLabs studio voice)" if use_eleven
                        else f"Narration complete ({voice})")
