@@ -43,7 +43,7 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
                   f"fade=t=in:st=0:d=0.4,fade=t=out:st={max(0.4, dur - 0.4):.2f}:d=0.4,format=yuv420p")
             sh(["ffmpeg", "-y", "-stream_loop", "-1", "-i", s["clip"], "-t", f"{dur:.2f}",
                 "-vf", vf, "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast",
-                "-crf", "23", "-an", str(seg)])
+                "-threads", "2", "-crf", "23", "-an", str(seg)])
         else:
             img = s.get("image")
             if not img:
@@ -54,7 +54,7 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
                   f":d={frames}:s={W}x{H}:fps={FPS},setsar=1,format=yuv420p")
             sh(["ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-i", img,
                 "-vf", vf, "-frames:v", str(frames),
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an", str(seg)])
+                "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-crf", "23", "-an", str(seg)])
         segs.append(seg)
         auds.append(s["audio"])
 
@@ -82,12 +82,12 @@ def render_timeline(scenes: List[Dict], workdir: Path, music: Optional[str] = No
             "[2:a]volume=0.12,apad[m];[1:a][m]amix=inputs=2:duration=first:dropout_transition=0[a]",
             "-map", "0:v", "-map", "[a]", "-vf", sub,
             "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p",
-            "-preset", "veryfast", "-crf", "23", "-movflags", "+faststart",
+            "-preset", "veryfast", "-threads", "2", "-crf", "23", "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100", "-shortest", str(final)])
     else:
         sh(["ffmpeg", "-y", "-i", str(vcat), "-i", str(narr),
             "-vf", sub, "-c:v", "libx264", "-profile:v", "high", "-level", "4.0",
-            "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-preset", "veryfast", "-threads", "2", "-crf", "23",
             "-movflags", "+faststart",
             "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "44100",
             "-shortest", str(final)])
