@@ -47,6 +47,8 @@ async def run_production(job_id: str, params: Dict[str, Any], workdir: Path,
         await director_agent(ctx)
         await voice_agent(ctx)
         job["metadata"]["voice_engine"] = ctx.data.get("voice_engine", "unknown")
+        if ctx.data.get("voice_note"):
+            job["metadata"]["voice_note"] = ctx.data["voice_note"]
         await send(job_id, {"type": "scenes", "scenes": job["scenes"]})  # durations updated
         await footage_agent(ctx)
         # footage attribution for the video description / credits

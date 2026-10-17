@@ -296,10 +296,18 @@ async def voice_agent(ctx: Ctx) -> Dict[str, Any]:
         try:
             need = int(sum(len(s.get("narration", "")) for s in scenes) * 1.2) + 100
             use_eleven = await asyncio.to_thread(_elevenlabs_quota_ok, eleven_key, need)
-            await ctx.emit("voice", "working", 5,
-                           "ElevenLabs studio voice" if use_eleven else "ElevenLabs quota low — neural fallback")
-        except Exception:
+            if use_eleven:
+                await ctx.emit("voice", "working", 5, "ElevenLabs studio voice")
+            else:
+                ctx.data["voice_note"] = "elevenlabs_quota_low"
+                await ctx.emit("voice", "working", 5, "ElevenLabs quota low — neural fallback")
+        except Exception as e:  # noqa: BLE001
             use_eleven = False
+            ctx.data["voice_note"] = f"elevenlabs_unavailable: {type(e).__name__}: {str(e)[:120]}"
+            await ctx.emit("voice", "working", 5,
+                           f"ElevenLabs unreachable ({type(e).__name__}) — neural fallback")
+    else:
+        ctx.data["voice_note"] = "elevenlabs_key_missing"
     try:
         import edge_tts  # noqa
         tts_ok = True
